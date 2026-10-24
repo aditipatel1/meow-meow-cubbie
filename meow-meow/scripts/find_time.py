@@ -35,6 +35,7 @@ import hashlib
 import json
 import sys
 from datetime import date, datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pathlib import Path
 
 SAMPLE = Path(__file__).resolve().parent.parent / "assets" / "sample_group.json"
@@ -162,28 +163,99 @@ def describe(r: dict) -> str:
     return "\n".join(lines)
 
 
-def ics(title: str, where: str, start: str, end: str, out: Path):
+
+def ics(
+    title: str,
+    where: str,
+    start: str,
+    end: str,
+    out: Path,
+    tz_name: str = "America/Phoenix",
+    reminder_minutes: int | None = None,
+):
     a, z = dt(start, "start"), dt(end, "end")
+
+    if a.tzinfo is not None or z.tzinfo is not None:
+        fail("Use local dates and times without UTC offsets.", 2)
+
     if z <= a:
         fail("End must be after start.", 2)
 
+    try:
+        tz = ZoneInfo(tz_name)
+    except (ZoneInfoNotFoundError, ValueError):
+        fail(f"Unknown timezone: {tz_name}", 2)
+
+    def to_utc(local_dt):
+        aware = local_dt.replace(tzinfo=tz)
+
+        # Reject nonexistent local times during DST transitions.
+        if aware.astimezone(timezone.utc).astimezone(tz).replace(
+            tzinfo=None
+        ) != local_dt:
+            fail(f"Invalid local time in {tz_name}: {local_dt}", 2)
+
+        return aware.astimezone(timezone.utc)
+
+    start_utc = to_utc(a)
+    end_utc = to_utc(z)
+
+    if end_utc <= start_utc:
+        fail("End must be after start in UTC.", 2)
+
+    if reminder_minutes is not None and reminder_minutes <= 0:
+        fail("Reminder must be a positive number of minutes.", 2)
+
     def esc(s: str) -> str:
-        return s.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+        return (
+            s.replace("\\", "\\\\")
+             .replace(";", "\\;")
+             .replace(",", "\\,")
+             .replace("\n", "\\n")
+        )
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    uid = f"{a.strftime('%Y%m%dT%H%M')}-{hashlib.sha1(title.encode()).hexdigest()[:10]}@meow-meow"
-    body = "\r\n".join([
-        "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//team 11:11//meow-meow//EN", "BEGIN:VEVENT",
-        f"UID:{uid}", f"DTSTAMP:{stamp}",
-        f"DTSTART:{a.strftime('%Y%m%dT%H%M%S')}", f"DTEND:{z.strftime('%Y%m%dT%H%M%S')}",
-        f"SUMMARY:{esc(title)}", f"LOCATION:{esc(where)}",
-        "DESCRIPTION:Planned by Meow-Meow. Paw raised for good luck.",
-        "BEGIN:VALARM", "TRIGGER:-PT30M", "ACTION:DISPLAY", "DESCRIPTION:Study session in 30 min", "END:VALARM",
-        "END:VEVENT", "END:VCALENDAR", ""])
+    fmt = "%Y%m%dT%H%M%SZ"
+
+    event_id = f"{title}|{start_utc.isoformat()}|{end_utc.isoformat()}"
+    uid = hashlib.sha256(event_id.encode()).hexdigest()[:24] + "@meow-meow"
+
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//Team 11:11//Meow-Meow//EN",
+        "CALSCALE:GREGORIAN",
+        "BEGIN:VEVENT",
+        f"UID:{uid}",
+        f"DTSTAMP:{stamp}",
+        f"DTSTART:{start_utc.strftime(fmt)}",
+        f"DTEND:{end_utc.strftime(fmt)}",
+        f"SUMMARY:{esc(title)}",
+        f"LOCATION:{esc(where)}",
+        f"DESCRIPTION:{esc('Planned by Meow-Meow. Timezone: ' + tz_name)}",
+    ]
+
+    if reminder_minutes is not None:
+        lines.extend([
+            "BEGIN:VALARM",
+            f"TRIGGER:-PT{reminder_minutes}M",
+            "ACTION:DISPLAY",
+            "DESCRIPTION:Your study session is coming up!",
+            "END:VALARM",
+        ])
+
+    lines.extend([
+        "END:VEVENT",
+        "END:VCALENDAR",
+        "",
+    ])
+
     out = out.expanduser()
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(body)
+    out.write_bytes("\r\n".join(lines).encode("utf-8"))
+
     print(str(out))
+
 
 
 def main():
@@ -200,10 +272,20 @@ def main():
     i.add_argument("--start", required=True)
     i.add_argument("--end", required=True)
     i.add_argument("--out", type=Path, default=Path.home() / "meow-meow" / "invite.ics")
+    i.add_argument("--timezone", default="America/Phoenix")
+    i.add_argument("--reminder-minutes", type=int, default=None)
     a = ap.parse_args()
 
     if a.cmd == "ics":
-        ics(a.title, a.where, a.start, a.end, a.out)
+        ics(
+    a.title,
+    a.where,
+    a.start,
+    a.end,
+    a.out,
+    tz_name=a.timezone,
+    reminder_minutes=a.reminder_minutes,
+)
         return
     path = SAMPLE if a.sample else a.input
     try:
