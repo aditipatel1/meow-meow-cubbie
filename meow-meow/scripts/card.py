@@ -29,6 +29,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 FONTS = ROOT / "assets" / "fonts"
 SAMPLE = ROOT / "assets" / "sample_plan.json"
+MASCOT = ROOT / "assets" / "lucky_cat.png"
 
 W, H = 1080, 1350
 S = 2  # supersampling factor for smooth edges
@@ -147,6 +148,40 @@ def cat(img: Image.Image, cx: int, cy: int, scale: float = 1.0):
     lw = max(p(4 * scale), 2)
     outline = GOLD_DEEP
 
+    def mascot_cat(img: Image.Image, cx: int, cy: int, scale: float = 1.0):
+        """Place the lucky-cat PNG mascot on the card."""
+    if not MASCOT.exists():
+        fail(f"Missing mascot image: {MASCOT}", 2)
+
+    mascot = Image.open(MASCOT).convert("RGBA")
+
+    # Resize the mascot to fit the header nicely
+    target_w = int(360 * scale * S)
+    target_h = int(360 * scale * S)
+    mascot.thumbnail((target_w, target_h), Image.LANCZOS)
+
+    # Center it around (cx, cy)
+    x = p(cx) - mascot.width // 2
+    y = p(cy) - mascot.height // 2
+
+    # Soft glow behind the mascot
+    glow = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    gd = ImageDraw.Draw(glow)
+    gd.ellipse(
+        [
+            x - p(25),
+            y - p(20),
+            x + mascot.width + p(25),
+            y + mascot.height + p(20),
+        ],
+        fill=GOLD_LIGHT + (55,),
+    )
+    glow = glow.filter(ImageFilter.GaussianBlur(p(20)))
+    img.alpha_composite(glow)
+
+    # Paste mascot
+    img.alpha_composite(mascot, (x, y))
+
     # soft glow behind the cat
     glow = Image.new("RGBA", img.size, (0, 0, 0, 0))
     gd = ImageDraw.Draw(glow)
@@ -227,7 +262,18 @@ def chip_row(d, x: int, y: int, items: list[str], max_x: int, fill, text_fill, f
 def render(plan: dict, out: Path):
     img = Image.new("RGBA", (p(W), p(H)), RED + (255,))
     background(img)
-    cat(img, W // 2, 292, 0.86)
+
+    mascot_path = ROOT / "assets" / "lucky_cat.png"
+    mascot = Image.open(mascot_path).convert("RGBA")
+
+    # Size and position of the new cat image
+    mascot.thumbnail((p(390), p(390)), Image.Resampling.LANCZOS)
+
+    x = (img.width - mascot.width) // 2
+    y = p(292) - mascot.height // 2
+
+    img.alpha_composite(mascot, (x, y))
+
     d = ImageDraw.Draw(img)
 
     # header wordmark
