@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/banner.png" alt="Meow-Meow, your lucky study buddy in iMessage" width="100%">
+  <img src="docs/banner.png?v=2" alt="Meow-Meow — Team 11:11" width="100%">
 </p>
 
 <h3 align="center">"We should study together" → a real time, a real place, a crew that shows up.</h3>
