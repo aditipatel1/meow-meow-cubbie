@@ -45,7 +45,7 @@ Meow-Meow:  [study pact card] [invite.ics]
 Text this link to Cubbie:
 
 ```
-https://github.com/<owner>/meow-meow/tree/main/meow-meow
+https://github.com/aditipatel1/meow-meow-cubbie/tree/main/meow-meow
 ```
 
 ## Why it's built this way
